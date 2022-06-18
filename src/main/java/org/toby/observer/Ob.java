@@ -28,8 +28,13 @@ public class Ob {
 
 
         // 여기서 오른쪽 변수를 iter를 넣으나 iter2를 넣으나 똑같은 역할을 한다.
-        for (Integer integer : iter2) {
-            System.out.println(integer);
+//        for (Integer integer : iter2) {
+//            System.out.println(integer);
+//        }
+
+        // java5 이전의 방식
+        for(Iterator<Integer> iterator = iter2.iterator();iterator.hasNext();){
+            System.out.println(iterator.next());
         }
     }
 
