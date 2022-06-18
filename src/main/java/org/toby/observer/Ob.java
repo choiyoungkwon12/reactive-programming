@@ -4,6 +4,8 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Observable;
 import java.util.Observer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @SuppressWarnings("deprecation")
 public class Ob {
@@ -65,14 +67,20 @@ public class Ob {
         Observer ob = new Observer() {
             @Override
             public void update(Observable o, Object arg) {
-                System.out.println(arg);
+                System.out.println(Thread.currentThread().getName() + " : " +  arg);
             }
         };
 
         IntObservable io = new IntObservable();
         io.addObserver(ob);
 
-        io.run();
+        System.out.println(Thread.currentThread().getName() + " EXIT");
+
+        // 메인스레드가 아니라 이벤트가 언제 실행될 지 모르니 블록킹시키지 않고 별도의 스레드에서 비동기적으로 동작하도록 하기 위함.
+        // 그렇게 동작 후 여러 스레드에서 동작하고 있는 옵저버들이 결과를 받을 수 있음.
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        es.execute(io);
+        es.shutdown();
     }
 
 }
