@@ -26,16 +26,37 @@ public class PubSub {
          *                  -> onComplete
          */
 
-        Publisher<Integer> mapPub = mapPub(pub, (Function<Integer, Integer>)s -> s * 10);
-        mapPub.subscribe(logSub());
+        Publisher<Integer> mapPub = mapPub(pub, s -> s * 10);
+        Publisher<Integer> map2Pub = mapPub(mapPub, s -> -s);
+        map2Pub.subscribe(logSub());
     }
 
     private static Publisher<Integer> mapPub(Publisher<Integer> pub,
-        Function<Integer, Integer> integerIntegerFunction) {
+        Function<Integer, Integer> f) {
         return new Publisher<Integer>() {
             @Override
-            public void subscribe(Subscriber<? super Integer> s) {
-                pub.subscribe(s);
+            public void subscribe(Subscriber<? super Integer> sub) {
+                pub.subscribe(new Subscriber<Integer>() {
+                    @Override
+                    public void onSubscribe(Subscription s) {
+                        sub.onSubscribe(s);
+                    }
+
+                    @Override
+                    public void onNext(Integer integer) {
+                        sub.onNext(f.apply(integer));
+                    }
+
+                    @Override
+                    public void onError(Throwable t) {
+                        sub.onError(t);
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        sub.onComplete();
+                    }
+                });
             }
         };
     }
