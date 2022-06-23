@@ -27,7 +27,8 @@ public class PubSub {
          *                  -> onComplete
          */
 
-        Publisher<Integer> mapPub = mapPub(pub, s -> s * 10);
+//        Publisher<Integer> mapPub = mapPub(pub, s -> s * 10);
+        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
         /*Publisher<Integer> sumPub = sumPub(pub);
         sumPub.subscribe(logSub());*/
         /*Publisher<Integer> reducePub = reducePub(pub, 0, Integer::sum);*/
@@ -81,12 +82,15 @@ public class PubSub {
         };
     }
 */
-    private static <T> Publisher<T> mapPub(Publisher<T> pub,
-        Function<T, T> f) {
-        return new Publisher<T>() {
+
+    // T -> R
+    // T타입을 받아서 R타입으로 반환
+    private static <T, R> Publisher<R> mapPub(Publisher<T> pub,
+        Function<T, R> f) {
+        return new Publisher<R>() {
             @Override
-            public void subscribe(Subscriber<? super T> sub) {
-                pub.subscribe(new DelegateSub<T>(sub) {
+            public void subscribe(Subscriber<? super R> sub) {
+                pub.subscribe(new DelegateSub<T, R>(sub) {
                     @Override
                     public void onNext(T i) {
                         sub.onNext(f.apply(i));
