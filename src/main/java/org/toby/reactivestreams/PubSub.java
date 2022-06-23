@@ -31,7 +31,7 @@ public class PubSub {
 //        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
         /*Publisher<Integer> sumPub = sumPub(pub);
         sumPub.subscribe(logSub());*/
-        Publisher<String> reducePub = reducePub(pub, "", (a, b) -> a + "-" + b);
+        Publisher<StringBuilder> reducePub = reducePub(pub, new StringBuilder(), (a, b) -> a.append(b).append(","));
         reducePub.subscribe(logSub());
     }
 
