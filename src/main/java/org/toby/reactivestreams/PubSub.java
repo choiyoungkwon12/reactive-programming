@@ -35,16 +35,16 @@ public class PubSub {
         reducePub.subscribe(logSub());
     }
 
-    private static Publisher<String> reducePub(Publisher<Integer> pub, String init,
-        BiFunction<String, Integer, String> bf) {
-        return new Publisher<String>() {
+    private static <T,R> Publisher<R> reducePub(Publisher<T> pub, R init,
+        BiFunction<R, T, R> bf) {
+        return new Publisher<R>() {
             @Override
-            public void subscribe(Subscriber<? super String> sub) {
-                pub.subscribe(new DelegateSub<Integer, String>(sub) {
-                    String result = init;
+            public void subscribe(Subscriber<? super R> sub) {
+                pub.subscribe(new DelegateSub<T, R>(sub) {
+                    R result = init;
 
                     @Override
-                    public void onNext(Integer integer) {
+                    public void onNext(T integer) {
                         result = bf.apply(result, integer);
                     }
 
