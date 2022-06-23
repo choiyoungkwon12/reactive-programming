@@ -28,20 +28,20 @@ public class PubSub {
          */
 
 //        Publisher<Integer> mapPub = mapPub(pub, s -> s * 10);
-        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
+//        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
         /*Publisher<Integer> sumPub = sumPub(pub);
         sumPub.subscribe(logSub());*/
-        /*Publisher<Integer> reducePub = reducePub(pub, 0, Integer::sum);*/
-        mapPub.subscribe(logSub());
+        Publisher<String> reducePub = reducePub(pub, "", (a, b) -> a + "-" + b);
+        reducePub.subscribe(logSub());
     }
 
-/*    private static Publisher<Integer> reducePub(Publisher<Integer> pub, int init,
-        BiFunction<Integer, Integer, Integer> bf) {
-        return new Publisher<Integer>() {
+    private static Publisher<String> reducePub(Publisher<Integer> pub, String init,
+        BiFunction<String, Integer, String> bf) {
+        return new Publisher<String>() {
             @Override
-            public void subscribe(Subscriber<? super Integer> sub) {
-                pub.subscribe(new DelegateSub(sub) {
-                    int result = init;
+            public void subscribe(Subscriber<? super String> sub) {
+                pub.subscribe(new DelegateSub<Integer, String>(sub) {
+                    String result = init;
 
                     @Override
                     public void onNext(Integer integer) {
@@ -58,7 +58,7 @@ public class PubSub {
 
             }
         };
-    }*/
+    }
 
  /*   private static Publisher<Integer> sumPub(Publisher<Integer> pub) {
         return new Publisher<Integer>() {
