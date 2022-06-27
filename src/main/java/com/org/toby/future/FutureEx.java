@@ -11,33 +11,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class FutureEx {
 
-    interface SuccessCallback{
-        void onSuccess(String result);
-    }
-    public static class CallbackFutureTask extends FutureTask<String>{
-        SuccessCallback sc;
-        public CallbackFutureTask(Callable<String> callable, SuccessCallback successCallback) {
-            super(callable);
-            this.sc = Objects.requireNonNull(successCallback);
-        }
-
-        @Override
-        protected void done() {
-            try {
-                sc.onSuccess(get());
-            } catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace();
-            }
-        }
-    }
     public static void main(String[] args) throws ExecutionException, InterruptedException {
         ExecutorService es = Executors.newCachedThreadPool();
 
         CallbackFutureTask f = new CallbackFutureTask(() -> {
             Thread.sleep(2000);
+
+            // 무조건 익셉션 발생
+            if (1 == 1) {
+                throw new RuntimeException("Async ERROR");
+            }
             log.debug("Async");
             return "Hello";
-        }, System.out::println);
+        },
+            s -> System.out.println("result : " + s),
+            // 실행
+            t -> System.out.println("error : " + t.getMessage()));
 
         // Future를 callback 방식으로
         /*FutureTask<String> f = new FutureTask<>(() -> {
@@ -59,5 +48,40 @@ public class FutureEx {
 
         es.execute(f);
         es.shutdown();
+    }
+
+    interface SuccessCallback {
+
+        void onSuccess(String result);
+    }
+
+    interface ExceptionCallback {
+
+        void onError(Throwable t);
+    }
+
+    public static class CallbackFutureTask extends FutureTask<String> {
+
+        SuccessCallback sc;
+        ExceptionCallback ec;
+
+        public CallbackFutureTask(Callable<String> callable, SuccessCallback successCallback, ExceptionCallback ec) {
+            super(callable);
+            this.sc = Objects.requireNonNull(successCallback);
+            this.ec = Objects.requireNonNull(ec);
+        }
+
+        @Override
+        protected void done() {
+            try {
+                // get에서 실행중 exception 발생
+                sc.onSuccess(get());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException e) {
+                // 에러 전달
+                ec.onError(e.getCause());
+            }
+        }
     }
 }
