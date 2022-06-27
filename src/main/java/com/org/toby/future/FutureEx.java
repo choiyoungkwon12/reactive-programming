@@ -15,6 +15,7 @@ public class FutureEx {
         // cached 스레드 풀은 maximum 제한이 없고, 처음에는 스레드가 미리 만들어있지 않고 요청시 생성
         ExecutorService es = Executors.newCachedThreadPool();
 
+        // f는 사실 비동기 작업의 리턴 값은 아니고 리턴값을 얻어올 방법을 제공할 핸들러 같은 것이지 사실 리턴값은 아님.
         Future<String> f = es.submit(() -> {
             Thread.sleep(2000);
             log.debug("Async");
