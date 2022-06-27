@@ -14,10 +14,13 @@ public class FutureEx {
     public static void main(String[] args) throws ExecutionException, InterruptedException {
         ExecutorService es = Executors.newCachedThreadPool();
 
+        /**
+         * 비즈니스 로직이 담겨있고 성공 했을 때 수행되는 코드, 실패 했을 때 수행되는 코드, 비동기 작업을 실행,
+         * 실행 후 스레드 풀 종료와 같은 성격이 다른 코드가 한 곳에 모여있음.
+         * ⇒ 두 가지 다 잘 알면 자유자재로 사용하겠지만 사실 좋은 코드는 아니고 분리 할 수 있으면 더 좋음.
+         */
         CallbackFutureTask f = new CallbackFutureTask(() -> {
             Thread.sleep(2000);
-
-            // 무조건 익셉션 발생
             if (1 == 1) {
                 throw new RuntimeException("Async ERROR");
             }
@@ -25,7 +28,6 @@ public class FutureEx {
             return "Hello";
         },
             s -> System.out.println("result : " + s),
-            // 실행
             t -> System.out.println("error : " + t.getMessage()));
 
         // Future를 callback 방식으로
