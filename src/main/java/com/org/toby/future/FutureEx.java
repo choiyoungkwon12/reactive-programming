@@ -24,8 +24,12 @@ public class FutureEx {
 
         // future의 get은 submit의 비동기 작업이 완료될때까지 기다림. 그래서 async -> hello -> exit 순서로 log가 찍힘
         // future의 get은 Blocking 메서드임.
-        // 이 코드에서는 스레드 풀 만들어서 비동적으로 작업을 할 필요가 없음. 그냥 메인에서 쭉 실행하는 것과 같음.
-        log.debug(f.get());
+        // future의 isDone은 작업의 결과를 기다리지 않고 작업이 끝났으면 true, 안끝났으면 false를 나타내는 함수임.
+        // 루프를 돌면서 future의 작업이 끝났는지 isDone으로 확인하고 끝났으면 f.get해서 가져오고 안끝났으면 다른 작업을 하는 방법도 있음.
+        System.out.println(f.isDone());
+        Thread.sleep(2500);
         log.debug("Exit");
+        System.out.println(f.isDone());
+        log.debug(f.get());
     }
 }
