@@ -1,4 +1,4 @@
-package org.toby.observer;
+package com.org.toby.observer;
 
 import java.util.Arrays;
 import java.util.Iterator;

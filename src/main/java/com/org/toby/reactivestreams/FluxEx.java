@@ -1,4 +1,4 @@
-package org.toby.reactivestreams;
+package com.org.toby.reactivestreams;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;

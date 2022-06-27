@@ -1,4 +1,4 @@
-package org.toby.reactivestreams;
+package com.org.toby.reactivestreams;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
