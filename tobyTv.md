@@ -217,3 +217,24 @@ es.shutdown();
 비즈니스 로직이 담겨있고 성공 했을 때 수행되는 코드, 실패 했을 때 수행되는 코드, 비동기 작업을 실행, 실행 후 스레드 풀 종료와 같은 성격이 다른 코드가 한 곳에 모여있음.
 
 ⇒ 두 가지 다 잘 알면 자유자재로 사용하겠지만 사실 좋은 코드는 아니고 분리 할 수 있으면 더 좋음.
+
+```java
+@GetMapping("/emitter")
+        public ResponseBodyEmitter emitter() {
+            ResponseBodyEmitter emitter = new ResponseBodyEmitter();
+            Executors.newSingleThreadExecutor().submit(() -> {
+                try {
+                    for (int i = 0; i < 50; i++) {
+                        emitter.send("<p>Stream" + i + "</p>");
+                        Thread.sleep(200);
+                    }
+                } catch (Exception e) {
+                }
+            });
+
+            return emitter;
+        }
+```
+
+emitter를 이용하면 http에서 한번에 모아서 결과를 주는게 아니라 sse 표준에 따라서 데이터를 streaming 방식처럼 response 해주면 그때그때 데이터가 클라이언트한테 넘어간다.
+-> 브라우저의 경우 바로 출력이 됨.
