@@ -22,6 +22,11 @@ public class TobyApplication {
     @RestController
     public static class MyController {
 
+        @GetMapping("rest")
+        public String rest(int idx){
+            return "rest " + idx ;
+        }
+
         @GetMapping("/emitter")
         public ResponseBodyEmitter emitter() {
             ResponseBodyEmitter emitter = new ResponseBodyEmitter();
