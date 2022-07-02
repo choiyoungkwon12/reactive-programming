@@ -5,9 +5,13 @@ import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
@@ -23,11 +27,12 @@ public class TobyApplication {
     @RestController
     public static class MyController {
 
-        RestTemplate rt = new RestTemplate();
+        AsyncRestTemplate rt = new AsyncRestTemplate();
 
         @GetMapping("/rest")
-        public String rest(int idx) {
-            return rt.getForObject("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
+        public ListenableFuture<ResponseEntity<String>> rest(int idx) {
+            return rt.getForEntity("http://localhost:8081/service?req={req}",
+                String.class, "hello" + idx);
         }
 
         @GetMapping("/emitter")
