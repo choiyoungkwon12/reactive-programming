@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
 @Slf4j
@@ -22,9 +23,11 @@ public class TobyApplication {
     @RestController
     public static class MyController {
 
-        @GetMapping("rest")
-        public String rest(int idx){
-            return "rest " + idx ;
+        RestTemplate rt = new RestTemplate();
+
+        @GetMapping("/rest")
+        public String rest(int idx) {
+            return rt.getForObject("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
         }
 
         @GetMapping("/emitter")
