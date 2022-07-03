@@ -33,41 +33,58 @@ public class TobyApplication {
 
         @GetMapping("/rest")
         public DeferredResult<String> rest(int idx) {
-            DeferredResult<String> dr =  new DeferredResult<>();
-            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}",
-                String.class, "hello" + idx);
-            f1.addCallback(result -> {
-                dr.setResult(result.getBody() + "/work");
-            },ex -> {
-                dr.setErrorResult(ex.getMessage());
+            // 오브젝트를 만들어서 컨트롤러에서 리턴하면 언제가 될지 모르지만 언제인가 DeferredResult에 값을 써주면
+            // 그 값을 응답으로 사용
+            DeferredResult<String> dr = new DeferredResult<>();
+
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
+                "hello" + idx);
+            log.info("rest3");
+            f1.addCallback(s -> {
+                log.info("rest1");
+                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
+                    String.class, s.getBody());
+                log.info("rest2");
+                f2.addCallback(s2 -> {
+                    log.info("응답 옴");
+                    dr.setResult(s2.getBody());
+                }, e -> {
+                    dr.setErrorResult(e.getMessage());
+                });
+
+            }, e -> {
+                dr.setErrorResult(e.getMessage());
             });
+
             return dr;
         }
+    }
 
-        @GetMapping("/emitter")
-        public ResponseBodyEmitter emitter() {
-            ResponseBodyEmitter emitter = new ResponseBodyEmitter();
-            Executors.newSingleThreadExecutor().submit(() -> {
-                try {
-                    for (int i = 0; i < 50; i++) {
-                        emitter.send("<p>Stream" + i + "</p>");
-                        Thread.sleep(200);
-                    }
-                } catch (Exception e) {
+    @GetMapping("/emitter")
+    public ResponseBodyEmitter emitter() {
+        ResponseBodyEmitter emitter = new ResponseBodyEmitter();
+        Executors.newSingleThreadExecutor().submit(() -> {
+            try {
+                for (int i = 0; i < 50; i++) {
+                    emitter.send("<p>Stream" + i + "</p>");
+                    Thread.sleep(200);
                 }
-            });
+            } catch (Exception e) {
+            }
+        });
 
-            return emitter;
-        }
+        return emitter;
+    }
 
-        @GetMapping("/callable")
-        public Callable<String> async() throws InterruptedException {
-            log.info("callable");
-            return () -> {
-                log.info("async");
-                Thread.sleep(2000);
-                return "hello";
-            };
-        }
+    @GetMapping("/callable")
+    public Callable<String> async() throws InterruptedException {
+        log.info("callable");
+        return () -> {
+            log.info("async");
+            Thread.sleep(2000);
+            return "hello";
+        };
     }
 }
+
+

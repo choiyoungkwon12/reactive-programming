@@ -11,17 +11,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class RemoteService {
 
     public static void main(String[] args) {
+        // VM Option : -Dserver.port=8081
         System.setProperty("server.tomcat.threads.max", "1000");
         SpringApplication.run(RemoteService.class, args);
     }
 
+
     @RestController
     public static class MyController {
-        // VM Option : -Dserver.port=8081
         @GetMapping("/service")
         public String service(String req) throws InterruptedException {
             Thread.sleep(2000);
-            return req + "/service";
+            return req + "/service1";
+        }
+
+        @GetMapping("/service2")
+        public String service2(String req) throws InterruptedException {
+            Thread.sleep(2000);
+            return req + "/service2";
         }
     }
 }
