@@ -1,18 +1,18 @@
 package com.org;
 
+import io.netty.channel.nio.NioEventLoopGroup;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.http.client.Netty4ClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
 @Slf4j
@@ -27,7 +27,7 @@ public class TobyApplication {
     @RestController
     public static class MyController {
 
-        AsyncRestTemplate rt = new AsyncRestTemplate();
+        AsyncRestTemplate rt = new AsyncRestTemplate(new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
 
         @GetMapping("/rest")
         public ListenableFuture<ResponseEntity<String>> rest(int idx) {
