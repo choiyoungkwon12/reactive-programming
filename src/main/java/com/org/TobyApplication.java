@@ -13,6 +13,7 @@ import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
+import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
 @Slf4j
@@ -24,15 +25,23 @@ public class TobyApplication {
         SpringApplication.run(TobyApplication.class, args);
     }
 
+    @Slf4j
     @RestController
     public static class MyController {
 
         AsyncRestTemplate rt = new AsyncRestTemplate(new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
 
         @GetMapping("/rest")
-        public ListenableFuture<ResponseEntity<String>> rest(int idx) {
-            return rt.getForEntity("http://localhost:8081/service?req={req}",
+        public DeferredResult<String> rest(int idx) {
+            DeferredResult<String> dr =  new DeferredResult<>();
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}",
                 String.class, "hello" + idx);
+            f1.addCallback(result -> {
+                dr.setResult(result.getBody() + "/work");
+            },ex -> {
+                dr.setErrorResult(ex.getMessage());
+            });
+            return dr;
         }
 
         @GetMapping("/emitter")
