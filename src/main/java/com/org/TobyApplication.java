@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.Netty4ClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.AsyncResult;
@@ -87,28 +86,29 @@ public class TobyApplication {
             Completion
                 .from(rt.getForEntity(URL1, String.class, "hello" + idx))
                 .andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
+                .andApply(s -> myService.work(s.getBody()))
                 .andError(e -> dr.setErrorResult(e))
-                .andAccept(s -> dr.setResult(s.getBody()));
+                .andAccept(s -> dr.setResult(s));
 
             return dr;
         }
     }
 
-    public static class AcceptCompletion extends Completion {
+    public static class AcceptCompletion<S> extends Completion<S, Void> {
 
-        Consumer<ResponseEntity<String>> con;
+        Consumer<S> con;
 
-        public AcceptCompletion(Consumer<ResponseEntity<String>> con) {
+        public AcceptCompletion(Consumer<S> con) {
             this.con = con;
         }
 
         @Override
-        protected void run(ResponseEntity<String> value) {
+        protected void run(S value) {
             con.accept(value);
         }
     }
 
-    public static class ErrorCompletion extends Completion {
+    public static class ErrorCompletion<T> extends Completion<T, T> {
 
         Consumer<Throwable> econ;
 
@@ -117,7 +117,7 @@ public class TobyApplication {
         }
 
         @Override
-        protected void run(ResponseEntity<String> value) {
+        protected void run(T value) {
             if (next != null) {
                 next.run(value);
             }
@@ -129,28 +129,28 @@ public class TobyApplication {
         }
     }
 
-    public static class ApplyCompletion extends Completion {
+    public static class ApplyCompletion<S, T> extends Completion<S, T> {
 
-        Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
+        Function<S, ListenableFuture<T>> fn;
 
-        public ApplyCompletion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+        public ApplyCompletion(Function<S, ListenableFuture<T>> fn) {
             this.fn = fn;
         }
 
         @Override
-        protected void run(ResponseEntity<String> value) {
-            ListenableFuture<ResponseEntity<String>> lf = fn.apply(value);
+        protected void run(S value) {
+            ListenableFuture<T> lf = fn.apply(value);
             lf.addCallback(s -> complete(s), e -> error(e));
         }
 
     }
 
-    public static class Completion {
+    public static class Completion<S, T> {
 
         Completion next;
 
-        public static Completion from(ListenableFuture<ResponseEntity<String>> lf) {
-            Completion completion = new Completion();
+        public static <S, T> Completion<S, T> from(ListenableFuture<T> lf) {
+            Completion<S, T> completion = new Completion<>();
             lf.addCallback(s -> {
                 completion.complete(s);
             }, e -> {
@@ -159,36 +159,36 @@ public class TobyApplication {
             return completion;
         }
 
-        public Completion andApply(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
-            Completion c = new ApplyCompletion(fn);
+        public <V> Completion<T, V> andApply(Function<T, ListenableFuture<V>> fn) {
+            Completion<T, V> c = new ApplyCompletion<>(fn);
             this.next = c;
             return c;
         }
 
-        public void andAccept(Consumer<ResponseEntity<String>> con) {
-            Completion c = new AcceptCompletion(con);
+        public void andAccept(Consumer<T> con) {
+            Completion<T, Void> c = new AcceptCompletion<>(con);
             this.next = c;
         }
 
-        public Completion andError(Consumer<Throwable> econ) {
-            Completion c = new ErrorCompletion(econ);
+        public Completion<T, T> andError(Consumer<Throwable> econ) {
+            Completion<T, T> c = new ErrorCompletion<>(econ);
             this.next = c;
             return c;
         }
 
         protected void error(Throwable e) {
-            if (next != null){
+            if (next != null) {
                 next.error(e);
             }
         }
 
-        protected void complete(ResponseEntity<String> s) {
+        protected void complete(T s) {
             if (next != null) {
                 next.run(s);
             }
         }
 
-        protected void run(ResponseEntity<String> value) {
+        protected void run(S value) {
 
         }
     }
