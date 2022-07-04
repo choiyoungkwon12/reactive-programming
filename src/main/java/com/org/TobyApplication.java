@@ -3,6 +3,7 @@ package com.org;
 import io.netty.channel.nio.NioEventLoopGroup;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
@@ -70,9 +71,10 @@ public class TobyApplication {
     @RestController
     public static class MyController {
 
+        static final String URL1 = "http://localhost:8081/service?req={req}";
+        static final String URL2 = "http://localhost:8081/service2?req={req}";
         @Autowired
         MyService myService;
-
         AsyncRestTemplate rt = new AsyncRestTemplate(new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
 
         @GetMapping("/rest")
@@ -81,30 +83,79 @@ public class TobyApplication {
             // 그 값을 응답으로 사용
             DeferredResult<String> dr = new DeferredResult<>();
 
-            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
-                "hello" + idx);
-            log.info("rest3");
-            f1.addCallback(s -> {
-                log.info("rest1");
-                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
-                    String.class, s.getBody());
-                log.info("rest2");
-                f2.addCallback(s2 -> {
-                    ListenableFuture<String> f3 = myService.work(s2.getBody());
-                    f3.addCallback(s3 -> {
-                        dr.setResult(s3);
-                    }, ex -> {
-                        dr.setErrorResult(ex.getMessage());
-                    });
-                }, e -> {
-                    dr.setErrorResult(e.getMessage());
-                });
+            Completion
+                .from(rt.getForEntity(URL1, String.class, "hello" + idx))
+                .andAccept(s -> dr.setResult(s.getBody()));
 
-            }, e -> {
-                dr.setErrorResult(e.getMessage());
-            });
+//
+//            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
+//                "hello" + idx);
+//            log.info("rest3");
+//            f1.addCallback(s -> {
+//                log.info("rest1");
+//                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
+//                    String.class, s.getBody());
+//                log.info("rest2");
+//                f2.addCallback(s2 -> {
+//                    ListenableFuture<String> f3 = myService.work(s2.getBody());
+//                    f3.addCallback(s3 -> {
+//                        dr.setResult(s3);
+//                    }, ex -> {
+//                        dr.setErrorResult(ex.getMessage());
+//                    });
+//                }, e -> {
+//                    dr.setErrorResult(e.getMessage());
+//                });
+//
+//            }, e -> {
+//                dr.setErrorResult(e.getMessage());
+//            });
 
             return dr;
+        }
+    }
+
+    public static class Completion {
+
+        Completion next;
+        Consumer<ResponseEntity<String>> con;
+
+        public Completion(Consumer<ResponseEntity<String>> con) {
+            this.con = con;
+        }
+
+        public Completion() {
+        }
+
+        public static Completion from(ListenableFuture<ResponseEntity<String>> lf) {
+            Completion completion = new Completion();
+            lf.addCallback(s -> {
+                completion.complete(s);
+            }, e -> {
+                completion.error(e);
+            });
+            return completion;
+        }
+
+        public void andAccept(Consumer<ResponseEntity<String>> con) {
+            Completion c = new Completion(con);
+            this.next = c;
+        }
+
+        private void error(Throwable e) {
+
+        }
+
+        private void complete(ResponseEntity<String> s) {
+            if (next != null) {
+                next.run(s);
+            }
+        }
+
+        private void run(ResponseEntity<String> value) {
+            if (con != null) {
+                con.accept(value);
+            }
         }
     }
 
