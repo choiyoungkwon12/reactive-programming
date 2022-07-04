@@ -4,6 +4,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
@@ -85,47 +86,43 @@ public class TobyApplication {
 
             Completion
                 .from(rt.getForEntity(URL1, String.class, "hello" + idx))
+                .andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
                 .andAccept(s -> dr.setResult(s.getBody()));
-
-//
-//            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
-//                "hello" + idx);
-//            log.info("rest3");
-//            f1.addCallback(s -> {
-//                log.info("rest1");
-//                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
-//                    String.class, s.getBody());
-//                log.info("rest2");
-//                f2.addCallback(s2 -> {
-//                    ListenableFuture<String> f3 = myService.work(s2.getBody());
-//                    f3.addCallback(s3 -> {
-//                        dr.setResult(s3);
-//                    }, ex -> {
-//                        dr.setErrorResult(ex.getMessage());
-//                    });
-//                }, e -> {
-//                    dr.setErrorResult(e.getMessage());
-//                });
-//
-//            }, e -> {
-//                dr.setErrorResult(e.getMessage());
-//            });
 
             return dr;
         }
     }
 
-    public static class Completion {
-
-        Completion next;
+    public static class AcceptCompletion extends Completion {
         Consumer<ResponseEntity<String>> con;
 
-        public Completion(Consumer<ResponseEntity<String>> con) {
+        public AcceptCompletion(Consumer<ResponseEntity<String>> con) {
             this.con = con;
         }
 
-        public Completion() {
+        @Override
+        protected void run(ResponseEntity<String> value) {
+            con.accept(value);
         }
+    }
+
+    public static class ApplyCompletion extends Completion {
+        Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
+        public ApplyCompletion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+            this.fn = fn;
+        }
+
+        @Override
+        protected void run(ResponseEntity<String> value) {
+            ListenableFuture<ResponseEntity<String>> lf = fn.apply(value);
+            lf.addCallback(s -> complete(s), e -> error(e));
+        }
+
+    }
+
+    public static class Completion {
+
+        Completion next;
 
         public static Completion from(ListenableFuture<ResponseEntity<String>> lf) {
             Completion completion = new Completion();
@@ -137,25 +134,29 @@ public class TobyApplication {
             return completion;
         }
 
+        public Completion andApply(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
+            Completion c = new ApplyCompletion(fn);
+            this.next = c;
+            return c;
+        }
+
         public void andAccept(Consumer<ResponseEntity<String>> con) {
-            Completion c = new Completion(con);
+            Completion c = new AcceptCompletion( con);
             this.next = c;
         }
 
-        private void error(Throwable e) {
+        protected void error(Throwable e) {
 
         }
 
-        private void complete(ResponseEntity<String> s) {
+        protected void complete(ResponseEntity<String> s) {
             if (next != null) {
                 next.run(s);
             }
         }
 
-        private void run(ResponseEntity<String> value) {
-            if (con != null) {
-                con.accept(value);
-            }
+        protected void run(ResponseEntity<String> value) {
+
         }
     }
 
