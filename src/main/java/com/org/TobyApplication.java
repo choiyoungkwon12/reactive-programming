@@ -87,6 +87,7 @@ public class TobyApplication {
             Completion
                 .from(rt.getForEntity(URL1, String.class, "hello" + idx))
                 .andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
+                .andError(e -> dr.setErrorResult(e))
                 .andAccept(s -> dr.setResult(s.getBody()));
 
             return dr;
@@ -94,6 +95,7 @@ public class TobyApplication {
     }
 
     public static class AcceptCompletion extends Completion {
+
         Consumer<ResponseEntity<String>> con;
 
         public AcceptCompletion(Consumer<ResponseEntity<String>> con) {
@@ -106,8 +108,31 @@ public class TobyApplication {
         }
     }
 
+    public static class ErrorCompletion extends Completion {
+
+        Consumer<Throwable> econ;
+
+        public ErrorCompletion(Consumer<Throwable> econ) {
+            this.econ = econ;
+        }
+
+        @Override
+        protected void run(ResponseEntity<String> value) {
+            if (next != null) {
+                next.run(value);
+            }
+        }
+
+        @Override
+        protected void error(Throwable e) {
+            econ.accept(e);
+        }
+    }
+
     public static class ApplyCompletion extends Completion {
+
         Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn;
+
         public ApplyCompletion(Function<ResponseEntity<String>, ListenableFuture<ResponseEntity<String>>> fn) {
             this.fn = fn;
         }
@@ -141,12 +166,20 @@ public class TobyApplication {
         }
 
         public void andAccept(Consumer<ResponseEntity<String>> con) {
-            Completion c = new AcceptCompletion( con);
+            Completion c = new AcceptCompletion(con);
             this.next = c;
         }
 
-        protected void error(Throwable e) {
+        public Completion andError(Consumer<Throwable> econ) {
+            Completion c = new ErrorCompletion(econ);
+            this.next = c;
+            return c;
+        }
 
+        protected void error(Throwable e) {
+            if (next != null){
+                next.error(e);
+            }
         }
 
         protected void complete(ResponseEntity<String> s) {
