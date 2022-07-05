@@ -93,7 +93,7 @@ public class TobyApplication {
 
             toCF(rt.getForEntity("http://localhost:8081/service?req={req}", String.class, "hello" + idx))
                 .thenCompose(s -> toCF(rt.getForEntity("http://localhost:8081/service2?req={req}", String.class, s.getBody())))
-                .thenCompose(s2 -> toCF(myService.work(s2.getBody())))
+                .thenApplyAsync(s2 -> myService.work(s2.getBody()))
                 .thenAccept(s -> dr.setResult(s))
                 .exceptionally(e -> {dr.setErrorResult(e.getMessage()); return (Void)null;});
 
@@ -233,9 +233,8 @@ public class TobyApplication {
     @Service
     public static class MyService {
 
-        @Async
-        public ListenableFuture<String> work(String req) {
-            return new AsyncResult<>(req + "/asyncwork");
+        public String work(String req) {
+            return req + "/asyncwork";
         }
     }
 }
