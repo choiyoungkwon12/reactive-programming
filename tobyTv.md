@@ -238,3 +238,397 @@ es.shutdown();
 
 emitter를 이용하면 http에서 한번에 모아서 결과를 주는게 아니라 sse 표준에 따라서 데이터를 streaming 방식처럼 response 해주면 그때그때 데이터가 클라이언트한테 넘어간다.
 -> 브라우저의 경우 바로 출력이 됨.
+
+## reactive-programming-5
+![img.png](img.png)
+
+요새 서비스들의 구성도가 위 사진과 같은 형태로 되어있는데 예를 들어 profile frontend에서는 각 백엔드를 호출한 뒤 스레드가 계속 대기상태에 빠져있어야 하거나 혹은 외부 서비스를 호출하는 경우에는 더 오랫동안 대기 해야 할텐데 이것을 어떻게 해결 할 것 인지를 알아봄,
+
+현재 cyclibarrier로 한번에 100개 스레드로 요청하는거 함.
+
+이제 외부 서비스 백단에서 요청해서 사용하듯이 하는것 구현 예정
+
+블록킹 메서드로 인해 외부 api 호출 시 이후 작업들 지연되는 현상
+
+getForObject는 블로킹 메서드라서 만약 url에 해당하는 요청작업이 시간이 오래 걸린다면 많은 작업 요청이 들어 왔을때 스레드 풀의 스레드가 전부 일하고 있다면 뒤에 작업들은 cpu가 놀고있음에도 불구하고 시작도 못하고 기다리게 된다.
+
+```java
+@RestController
+public static class MyController {
+
+    RestTemplate rt = new RestTemplate();
+
+    @GetMapping("/rest")
+    public String rest(int idx) {
+        return rt.getForObject("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
+    }
+}
+```
+
+아래와 같은 형태로
+
+AsnycRestTemplate의 getforentity를 통해서 외부 api 호출을 하면 2초씩 걸리는 작업을 기다리는것이 아니라 즉시 리턴한 뒤 백그라운드에서 url에 대한 api호출을 하고 이후 callback에 대한 결과는 spring mvc한테 리턴을하고 spring mvc는 해당 결과 값을 그대로 보여주게 된다. (하지만 AysncTemplate은 deprecated로 된것으로 보임)
+```java
+@RestController
+public static class MyController {
+
+    AsyncRestTemplate rt = new AsyncRestTemplate();
+
+    @GetMapping("/rest")
+    public ListenableFuture<ResponseEntity<String>> rest(int idx) {
+        return rt.getForEntity("http://localhost:8081/service?req={req}",
+            String.class, "hello" + idx);
+    }
+}
+```
+
+
+위 코드도 사실 제약이 있음.
+
+getForEntity를 사용하면 비동기로 실행하는것은 맞으나, 백그라운드에 스레드를 만든다.(JMC를 통해 확인 가능)
+
+매번 스레드를 만드는 것은 사실 많은 비용이 들기 때문에 원하는 방식의 결과물은 아니다.
+
+원하는 바람직한 결과는 최소한의 api호출을 비동기적으로 처리하기 위한 최소한으로 스레드 자원을 사용하고 100개의 api를 동시에 날리고 동시에 응답을 받아서 스프링 mvc의 비동기 mvc에 결과를 받아서 나타내고 싶은것이다.
+
+→ non-blocking i/o 라이브러리들을 async RestTemplate에 사용하면 해결가능(ex. netty 사용하면 해결 가능)
+
+비동기 방식으로 적은 스레드로도 많은 요청을 처리할 수 있음.
+
+또한, 외부 api 호출 후 결과 값을 가공하고 defferredResult에 결과를 담아서 리턴하면 클라이언트한테 리턴함. (예시 코드에서는 2초짜리 일을 하는 외부 api호출을 2번하는 요청을 100번을 해도 서블릿 스레드 1개로 약 4초대에 response함.)
+
+(맥북에서는 안되는데 왜 안되는지 모르겠음…)
+
+### TobyApplication (서버)
+```java
+package com.org;
+
+import io.netty.channel.nio.NioEventLoopGroup;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.Netty4ClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.AsyncRestTemplate;
+import org.springframework.web.context.request.async.DeferredResult;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+
+@Slf4j
+@EnableAsync
+@SpringBootApplication
+public class TobyApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(TobyApplication.class, args);
+    }
+
+    @Slf4j
+    @RestController
+    public static class MyController {
+
+        AsyncRestTemplate rt = new AsyncRestTemplate(new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
+
+        @GetMapping("/rest")
+        public DeferredResult<String> rest(int idx) {
+            // 오브젝트를 만들어서 컨트롤러에서 리턴하면 언제가 될지 모르지만 언제인가 DeferredResult에 값을 써주면
+            // 그 값을 응답으로 사용
+            DeferredResult<String> dr = new DeferredResult<>();
+
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
+                "hello" + idx);
+            log.info("rest3");
+            f1.addCallback(s -> {
+                log.info("rest1");
+                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
+                    String.class, s.getBody());
+                log.info("rest2");
+                f2.addCallback(s2 -> {
+                    log.info("응답 옴");
+                    dr.setResult(s2.getBody());
+                }, e -> {
+                    dr.setErrorResult(e.getMessage());
+                });
+
+            }, e -> {
+                dr.setErrorResult(e.getMessage());
+            });
+
+            return dr;
+        }
+    }
+
+    @GetMapping("/emitter")
+    public ResponseBodyEmitter emitter() {
+        ResponseBodyEmitter emitter = new ResponseBodyEmitter();
+        Executors.newSingleThreadExecutor().submit(() -> {
+            try {
+                for (int i = 0; i < 50; i++) {
+                    emitter.send("<p>Stream" + i + "</p>");
+                    Thread.sleep(200);
+                }
+            } catch (Exception e) {
+            }
+        });
+
+        return emitter;
+    }
+
+    @GetMapping("/callable")
+    public Callable<String> async() throws InterruptedException {
+        log.info("callable");
+        return () -> {
+            log.info("async");
+            Thread.sleep(2000);
+            return "hello";
+        };
+    }
+}
+```
+
+### RemoteService(외부 서버)
+```java
+package com.org;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@Slf4j
+@SpringBootApplication
+public class RemoteService {
+
+    public static void main(String[] args) {
+        // VM Option : -Dserver.port=8081
+        System.setProperty("server.tomcat.threads.max", "1000");
+        SpringApplication.run(RemoteService.class, args);
+    }
+
+
+    @RestController
+    public static class MyController {
+        @GetMapping("/service")
+        public String service(String req) throws InterruptedException {
+            Thread.sleep(2000);
+            return req + "/service1";
+        }
+
+        @GetMapping("/service2")
+        public String service2(String req) throws InterruptedException {
+            Thread.sleep(2000);
+            return req + "/service2";
+        }
+    }
+}
+```
+
+### LoadTest(서버 호출용 클라이언트 역할)
+```java
+package com.org.toby;
+
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StopWatch;
+import org.springframework.web.client.RestTemplate;
+
+@Slf4j
+public class LoadTest {
+
+    static AtomicInteger counter = new AtomicInteger();
+
+    public static void main(String[] args) throws BrokenBarrierException, InterruptedException {
+        ExecutorService es = Executors.newFixedThreadPool(100);
+
+        RestTemplate rt = new RestTemplate();
+        String url = "http://localhost:8080/rest?idx={idx}";
+
+        CyclicBarrier cyclicBarrier = new CyclicBarrier(101);
+
+        for (int i = 0; i < 100; i++) {
+             es.submit(() -> {
+                 int idx = counter.addAndGet(1);
+
+                 cyclicBarrier.await();
+
+                 StopWatch sw = new StopWatch();
+                 sw.start();
+
+                 String res = rt.getForObject(url, String.class, idx);
+
+                 sw.stop();
+
+                 log.info("Elapsed : {} {} / {}", idx, sw.getTotalTimeSeconds(), res);
+                 return null;
+             });
+        }
+
+        cyclicBarrier.await();
+
+        StopWatch main = new StopWatch();
+        main.start();
+
+        es.shutdown();
+        es.awaitTermination(100, TimeUnit.SECONDS);
+
+        main.stop();
+
+        log.info("Total : {}", main.getTotalTimeSeconds());
+    }
+
+}
+```
+
+## reactive-programming-6
+
+```java
+package com.org;
+
+import io.netty.channel.nio.NioEventLoopGroup;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.Netty4ClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.AsyncResult;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Service;
+import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.AsyncRestTemplate;
+import org.springframework.web.context.request.async.DeferredResult;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+
+@Slf4j
+@EnableAsync
+@SpringBootApplication
+public class TobyApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(TobyApplication.class, args);
+    }
+
+    @GetMapping("/emitter")
+    public ResponseBodyEmitter emitter() {
+        ResponseBodyEmitter emitter = new ResponseBodyEmitter();
+        Executors.newSingleThreadExecutor().submit(() -> {
+            try {
+                for (int i = 0; i < 50; i++) {
+                    emitter.send("<p>Stream" + i + "</p>");
+                    Thread.sleep(200);
+                }
+            } catch (Exception e) {
+            }
+        });
+
+        return emitter;
+    }
+
+    @GetMapping("/callable")
+    public Callable<String> async() throws InterruptedException {
+        log.info("callable");
+        return () -> {
+            log.info("async");
+            Thread.sleep(2000);
+            return "hello";
+        };
+    }
+
+    @Bean
+    public ThreadPoolTaskExecutor myThreadPool() {
+        ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
+        te.setCorePoolSize(1);
+        te.setMaxPoolSize(10);
+        te.initialize();
+        return te;
+    }
+
+    @Slf4j
+    @RestController
+    public static class MyController {
+
+        @Autowired
+        MyService myService;
+
+        AsyncRestTemplate rt = new AsyncRestTemplate(new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
+
+        @GetMapping("/rest")
+        public DeferredResult<String> rest(int idx) {
+            // 오브젝트를 만들어서 컨트롤러에서 리턴하면 언제가 될지 모르지만 언제인가 DeferredResult에 값을 써주면
+            // 그 값을 응답으로 사용
+            DeferredResult<String> dr = new DeferredResult<>();
+
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
+                "hello" + idx);
+            log.info("rest3");
+            f1.addCallback(s -> {
+                log.info("rest1");
+                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
+                    String.class, s.getBody());
+                log.info("rest2");
+                f2.addCallback(s2 -> {
+                    ListenableFuture<String> f3 = myService.work(s2.getBody());
+                    f3.addCallback(s3 -> {
+                        dr.setResult(s3);
+                    }, ex -> {
+                        dr.setErrorResult(ex.getMessage());
+                    });
+                }, e -> {
+                    dr.setErrorResult(e.getMessage());
+                });
+
+            }, e -> {
+                dr.setErrorResult(e.getMessage());
+            });
+
+            return dr;
+        }
+    }
+
+    @Service
+    public static class MyService {
+
+        @Async
+        public ListenableFuture<String> work(String req) {
+            return new AsyncResult<>(req + "/asyncwork");
+        }
+    }
+}
+```
+
+안으로 깊이가 깊은 코드가 나오지 않도록 리팩토링할 예정 (콜백지옥해결)
+
+rest()에서 구현되어있는 코드형태는 실행될 콜백을 등록해놓고 실제 작업이 완료되면 딱한번 호출되고 끝남.
+
+→ 요청한 작업이 끝나고 어떤 액션을 취하겠다하는 구조적으로 제공해줄 수 있는 방법은 아님.
+
+또한, setErrorResult와 같은 형태의 메서드를 중복으로 작성해야 하는 문제
+
+⇒ Complete 클래스를 만들고, 다형성을 만들어서 체이닝 형태로 변경.
+
+제네릭을 적용해서 ListenerableFuture만 반환하면 어떤 형태를 반환하든 다 사용가능하도록 구현(ex. myService.work)
+
+
+## Reactive-Streams-7
+
+
+
+
