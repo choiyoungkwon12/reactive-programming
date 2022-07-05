@@ -168,7 +168,7 @@ subscribeOn, publishOn
 
 다른 스레드에서 호출되는 결과를 가져오기 위한 가장 간단한 방법
 
-```jsx
+```java
 @Slf4j
 public class FutureEx {
 
@@ -200,18 +200,18 @@ public class FutureEx {
 
 ```java
 CallbackFutureTask f = new CallbackFutureTask(() -> {
-            Thread.sleep(2000);
-            if (1 == 1) {
-                throw new RuntimeException("Async ERROR");
-            }
-            log.debug("Async");
-            return "Hello";
-        },
-            s -> System.out.println("result : " + s),
-            t -> System.out.println("error : " + t.getMessage()));
+    Thread.sleep(2000);
+    if (1 == 1) {
+    throw new RuntimeException("Async ERROR");
+    }
+    log.debug("Async");
+    return "Hello";
+    },
+    s -> System.out.println("result : " + s),
+    t -> System.out.println("error : " + t.getMessage()));
 
-es.execute(f);
-es.shutdown();
+    es.execute(f);
+    es.shutdown();
 ```
 
 비즈니스 로직이 담겨있고 성공 했을 때 수행되는 코드, 실패 했을 때 수행되는 코드, 비동기 작업을 실행, 실행 후 스레드 풀 종료와 같은 성격이 다른 코드가 한 곳에 모여있음.
@@ -629,6 +629,47 @@ rest()에서 구현되어있는 코드형태는 실행될 콜백을 등록해놓
 
 ## Reactive-Streams-7
 
+### CompletableFuture
 
+`Future`는 비동기 작업의 결과를 담고있는 오브젝트이다.
 
+get 메서드를 사용해서 비돟기에서 처리한 결과를 가져올 수 있음.
+
+비동기 - 새로운 스레드를 만들어서 백그라운드에서 원래 수행하고 있는 스레드와 별개로 작업을 수행하도록 하는 것인데 작업 결과를 가져오는 방법중 하나로 Future의 get 메서드로 가장 원시적이지만 심플한 방법, listenerableFuture로 콜백 구조로 결과가 완료되는 시점에 훅킹을 걸어서 결과를 가져올 수 있음.
+
+비동기 작업의 결과를 사용하는 것은 결국 비동기 작업을 수행하는 코드 안에서 수행이 되는 것이다.
+
+근데 CompletableFuture라는 것은 이 오브젝트를 가지고 내가 비동기 작업을 직접 간단하게 완료하는 그런 작업을 수행하게 할 수 있음.
+
+원래는 listenerableFuture에서 futureTask 같은거 사용하면 사용할 수 있지만, 꽤 복잡함.
+
+CompletableFuture는 리스트의 모든 값이 완료될 때까지 기다릴지 아니면 하나의 값만 완료되길 기다릴지 선택할 수 있는것이 장점.
+
+CompletableFuture 클래스는 람다 표현식과 파이프라이닝을 활용하면 구조적으로 아름답게 만들 수 있음.
+
+```java
+// 이미 작업이 완료가 된 Future object를 만들 수 있음.
+        CompletableFuture<Integer> f = new CompletableFuture<>();
+        CompletableFuture<Integer> f2 = CompletableFuture.completedFuture(1);
+        f.completeExceptionally(new RuntimeException());
+//         System.out.println(f.get());
+get이 없다면 사실 아무곳에서도 결과를 받아내는 곳이 없기 때문에 
+비동기 작업의 결과를 노출하지 않고 exception이나 정상적인 결과를 받을 수 없음.
+
+get을 하면 결과값을 확인하는 시점에서 받아내기 때문에 exception이나 결과값을 받을 수 있음.
+```
+
+기존의 Future같은것을 스레드를 생성해서 submit 해서 돌리고 뭐… 이런식으로 안하고 간결한 방식으로 비동기 코드를 만들어 낼 수 있는게 CompletableFuture의 장점임.
+
+병렬성(parallelism)과 동시성(concurrency)에서 CompletableFuture가 중요한데 여러개의, cpu core 사이에 지연 실행이나 예외를 callable하게 처리할 수 있어서 명시적인 처리가 가능함.
+
+core 성능을 덜 잡아 먹을 수 있는 것이 장점이 됨.
+
+CompletableFuture은 CompletionStage(자바8에 추가), Future라는 인터페이스를 구현하는데
+
+간단한 하게 설명하면 CompletionStage는 하나의 비동기 작업을 수행하고 이것이 완료가 됐을때 여기에 의존적으로 또 다른 작업을 할 수 있도록 하는 명령들을 가지고 있는 것이 CompletionStage임.
+
+**CompletionStage(doc 자세히 읽어보기!)**
+
+그래서 runAsync를 호출하면 CompletableFuture를 리턴함. 그래서 이어서 thenRunAsync, thenRun와 같은 메서드를 사용할 수 있음.
 
