@@ -13,16 +13,18 @@ public class CFuture {
         CompletableFuture
             .supplyAsync(() -> {
                 log.info("runAsync");
+                if (1==1) throw new RuntimeException();
                 return 1;
             })
-            .thenApply(s -> {
+            .thenCompose(s -> {
                 log.info("thenApply {}", s);
-                return s + 1;
+                return CompletableFuture.completedFuture(s + 1);
             })
             .thenApply(s2 -> {
                 log.info("thenApply {}", s2);
                 return s2 * 3;
             })
+            .exceptionally(e -> -10)
             .thenAccept(s3 -> log.info("thenAccept {} ", s3));
 
         log.info("exit");
