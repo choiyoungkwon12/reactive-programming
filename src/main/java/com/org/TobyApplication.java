@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.Netty4ClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.AsyncResult;
@@ -92,9 +91,14 @@ public class TobyApplication {
                 .andError(e -> dr.setErrorResult(e))
                 .andAccept(s -> dr.setResult(s));*/
 
-            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
-                "hello" + idx);
-            log.info("rest3");
+            toCF(rt.getForEntity("http://localhost:8081/service?req={req}", String.class, "hello" + idx))
+                .thenCompose(s -> toCF(rt.getForEntity("http://localhost:8081/service2?req={req}", String.class, s.getBody())))
+                .thenCompose(s2 -> toCF(myService.work(s2.getBody())))
+                .thenAccept(s -> dr.setResult(s))
+                .exceptionally(e -> {dr.setErrorResult(e.getMessage()); return (Void)null;});
+
+
+            /*log.info("rest3");
             f1.addCallback(s -> {
                 log.info("rest1");
                 ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
@@ -113,14 +117,14 @@ public class TobyApplication {
 
             }, e -> {
                 dr.setErrorResult(e.getMessage());
-            });
+            });*/
 
             return dr;
         }
 
-        
+
         // listenableFuture를 completableFuture로 감싸기
-        <T> CompletableFuture<T> toCF(ListenableFuture<T> lf){
+        <T> CompletableFuture<T> toCF(ListenableFuture<T> lf) {
             CompletableFuture<T> cf = new CompletableFuture<T>();
             lf.addCallback(cf::complete, cf::completeExceptionally);
             return cf;
