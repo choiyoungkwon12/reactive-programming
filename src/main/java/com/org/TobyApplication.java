@@ -2,6 +2,7 @@ package com.org;
 
 import io.netty.channel.nio.NioEventLoopGroup;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.Netty4ClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.AsyncResult;
@@ -83,14 +85,45 @@ public class TobyApplication {
             // 그 값을 응답으로 사용
             DeferredResult<String> dr = new DeferredResult<>();
 
-            Completion
+/*            Completion
                 .from(rt.getForEntity(URL1, String.class, "hello" + idx))
                 .andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
                 .andApply(s -> myService.work(s.getBody()))
                 .andError(e -> dr.setErrorResult(e))
-                .andAccept(s -> dr.setResult(s));
+                .andAccept(s -> dr.setResult(s));*/
+
+            ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class,
+                "hello" + idx);
+            log.info("rest3");
+            f1.addCallback(s -> {
+                log.info("rest1");
+                ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}",
+                    String.class, s.getBody());
+                log.info("rest2");
+                f2.addCallback(s2 -> {
+                    ListenableFuture<String> f3 = myService.work(s2.getBody());
+                    f3.addCallback(s3 -> {
+                        dr.setResult(s3);
+                    }, ex -> {
+                        dr.setErrorResult(ex.getMessage());
+                    });
+                }, e -> {
+                    dr.setErrorResult(e.getMessage());
+                });
+
+            }, e -> {
+                dr.setErrorResult(e.getMessage());
+            });
 
             return dr;
+        }
+
+        
+        // listenableFuture를 completableFuture로 감싸기
+        <T> CompletableFuture<T> toCF(ListenableFuture<T> lf){
+            CompletableFuture<T> cf = new CompletableFuture<T>();
+            lf.addCallback(cf::complete, cf::completeExceptionally);
+            return cf;
         }
     }
 
