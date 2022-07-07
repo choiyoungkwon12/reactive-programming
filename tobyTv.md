@@ -673,3 +673,137 @@ CompletableFuture은 CompletionStage(자바8에 추가), Future라는 인터페�
 
 그래서 runAsync를 호출하면 CompletableFuture를 리턴함. 그래서 이어서 thenRunAsync, thenRun와 같은 메서드를 사용할 수 있음.
 
+# reactive-programming-8, 9
+
+Mono는 데이터를 파라미터로 한번에 던지고 리턴값에 한번에 다 담음. 만약 리턴이 여러개면 컬렉션 이용.
+
+```java
+String s = "Hello";
+Mono<String> m = Mono.just("Hello");
+
+// 둘의 차이점은 Mono는 컨테이너의 많은 기능을 제공해준다.
+```
+
+### Webflux(Reactive-Web)을 사용하면 기본적으로 톰캣이 아닌 네티를 사용한다.
+
+⇒ 이유는 기존에는 스프링mvc가 서블릿을 기반으로 사용하기 때문에 톰캣을 기본으로 사용했었음. 그러나 웹플럭스는 서블릿이라는 자바의 기술을 의존하지 않도록 스프링 웹플럭스가 나왔음.
+
+그래서 http를 지원하는 웹서버라면 서블릿을 굳이 직접 지원하지 않더라도 그런류의 웹 서버 혹은 네트워크 서버면 어떤 종류의 라이브러리든 사용할 수 있는데 현재 총4개(네티,제티,톰캣,언더토우)를 사용 가능. 그중에서 가장 비동기 논블록킹 스타일의 서버 코드를 작성 할 때 많이 사용하는 네티를 기본 엔진으로 깔려있음.
+
+하지만 어디 위에 올라가든 애플리케이션 코드가 달라지는 일은 없음. 서버의 설정은 조금 달라질 수 있어도
+
+컨트롤러에서 그냥 String으로 리턴하는 것과 Mono로 감싸서 리턴하는 것의 차이는 무엇일까?
+
+```java
+@GetMapping("/")
+    Mono<String> hello() throws InterruptedException {
+        log.info("pos1");
+        Mono<String> hello_webFlux = Mono.just("Hello WebFlux").log();
+        Thread.sleep(1000);
+        log.info("pos2");
+        return hello_webFlux; // publisher -> publisher -> publisher -> subscriber
+}
+```
+
+이 컨트롤러를 실행했을 때 결과는 아래와 같다.
+
+![img_1.png](img_1.png)
+
+언뜻 보기에는 pos1 이 찍히고 mono의 log가 찍히고 pos2가 찍힐 것 같지만, pos1,pos2 mono.log 순서대로 실행된다.
+
+이유는 mono log남기는 부분의 기능은 코드는 동기적으로 실행된다고 할지라도 이때 동작하는 것이아니라, 다 조합돼서 스프링을 넘어가고 스프링에서 해당 mono를 subscribe 하면 실행이 되는 것이다.
+
+`publisher -> publisher -> publisher -> subscriber` 구조로 되어있을때 마지막에 subscriber가 publisher가 보내는 데이터 스트림을 구독을 한다는 느낌의 subscribe를 하는 시점에 퍼블리셔가 보내는 데이터가 가기 시작함.
+
+⇒ mono.just.log 로 데이터를 만들어도 아직 subscribe 하지 않아서 실행이 안되는 것임.
+
+Mono.just(myService.work(1)).log() 에서 myService.work()는just에서는 동기 방식이라서 이미 만들어져 있는 데이터를 준비해놓고 나중에 subscribe할때 보내는 것이기 때문에 myService.work()는 실행이 된다.
+
+```java
+@GetMapping("/")
+    Mono<String> hello() throws InterruptedException {
+        log.info("pos1");
+        Mono<String> hello_webFlux = Mono.just(generateHello()).doOnNext(log::info).log();
+        Thread.sleep(1000);
+        log.info("pos2");
+        return hello_webFlux; // publisher -> publisher -> publisher -> subscriber
+    }
+
+    private String generateHello() {
+        log.info("method generateHello()");
+        return "Hello";
+    }
+```
+
+위 코드의 결과
+
+![img_2.png](img_2.png)
+
+⇒ myService.work()를 비동기로 mono가 실행될때 같이 실행되게 하려면 Mono가 가지고 있는 publisher를 생성하는 메서드중 fromSupplier와 같은 메서드를 사용하면 된다.
+
+```java
+@GetMapping("/")
+    Mono<String> hello() throws InterruptedException {
+        log.info("pos1");
+        Mono<String> hello_webFlux = Mono.fromSupplier(this::generateHello).doOnNext(log::info).log();
+        Thread.sleep(1000);
+        log.info("pos2");
+        return hello_webFlux; // publisher -> publisher -> publisher -> subscriber
+    }
+
+    private String generateHello() {
+        log.info("method generateHello()");
+        return "Hello";
+    }
+```
+
+![img_3.png](img_3.png)
+
+fromSupplier와 같은 람다를 던져주는 메서드를 사용하게 되면 바로 실행되는 것이 아니라 람다의 메서드가 실행될때 해당 내용이(generateHello) 수행되기 때문에 Mono와 실행되는 시간이 같아진다.
+
+```java
+@GetMapping("/")
+    Mono<String> hello() throws InterruptedException {
+        log.info("pos1");
+        Mono<String> m = Mono.fromSupplier(this::generateHello).doOnNext(log::info).log();
+        m.subscribe();
+        log.info("pos2");
+        return m; // publisher -> publisher -> publisher -> subscriber
+    } 
+```
+
+     m.subscribe();와 같이 중간에 명시적으로 작성해주면 로그가 2번 찍히는데 여기서 중요한것을 알 수 있음.
+
+⇒ 모노나 플럭스같은 퍼블리셔들은 하나 이상의 여러 subscriber을 가질 수 있음.
+
+⇒ 퍼블리셔가 데이터를 공급하는 타입에는 크게 2가지로 나뉘어 지는데 콜드타입, 핫타입으로 나뉨.
+
+```java
+Mono<String> hello_webFlux = Mono.fromSupplier(this::generateHello).doOnNext(log::info).log();
+```
+
+fromSupplier(this::generateHello) 와 같이 호출을 할때마다 데이터가 만들어져서 고정이 되어있는(어느 subscriber가 요청하든 같은 결과를 나타내는 것) 것을 **콜드 타입**이라고 한다.
+
+**콜드타입은 subscriber가 새로운 subscribe 할때마다 퍼블리셔가 가지고 있는 데이터를 처음부터 다시 다 해서 보내준다.**
+
+**이게 여러개가 동시에 하거나, 순차적으로 하는 것과 상관없이 콜드 소스 타입 퍼블리셔는 데이터를 똑같이 다 리플레이 한다.**
+
+핫소스 : 진짜 실시간으로 일어나는 외부의 이벤트(유저 인터페이스에 의한 액션, 외부 시스템에서 데이터가 실시간으로 라이브적으로 날아오는것)들을 핫소스라고 한다.
+
+⇒ 퍼블리셔가 100개가 날린 후 새로운 subsciber가 subscribe를 하면 그 이후인 101 데이터부터 받게 된다.
+
+반면, 콜드 소스타입은 새로운 subscribe가 일어날때마다 리플레이를 한다.
+
+원래 Mono,Flux에 담아서 리턴하는 것이 일반적이지만, 다시 String과 같은 형태로 빼서 사용해야 하는 경우가 생긴다면 block() 메서드로 사용할 수 있다고 한다.
+
+⇒ 그러나 실행해본 결과 .IllegalStateException 발생 토비님이 했을 떄와 뭔가 달라진듯함.
+
+illegalStateException이 발생하지 않더라도 block을 사용하는 것보다 Mono로 유지하는 것이 좋다.
+
+reactive-spring-data 같은 것을 사용하면 실제로 db에 대한 작업이 수행되지 않는다 이유는 Db엑세스하는 부분까지 Mono로 다 연결 되어 있기 떄문에 어디선가 subscibe해야 수행이 된다.
+
+---
+
+![img_4.png](img_4.png)
+
+![img_5.png](img_5.png)
