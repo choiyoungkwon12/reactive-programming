@@ -802,6 +802,144 @@ illegalStateException이 발생하지 않더라도 block을 사용하는 것보�
 
 reactive-spring-data 같은 것을 사용하면 실제로 db에 대한 작업이 수행되지 않는다 이유는 Db엑세스하는 부분까지 Mono로 다 연결 되어 있기 떄문에 어디선가 subscibe해야 수행이 된다.
 
+
+## Reactive-Programming 10
+
+```
+
+@GetMapping("/event2/{id}")
+Mono<List<Event>>event2(@PathVariable long id) {
+return Mono.just(List.of(new Event(1L, "event1"), new Event(2L, "event2")));
+}
+
+@GetMapping("/events")
+Flux<Event>events() {
+return Flux.just(new Event(1L, "event2"), new Event(2L, "event2"));
+}
+
+```
+
+위 코드와 같이 사용 했을 때 Mono<List> 와 Flux와의 차이점
+
+리턴 결과는 같고, 단지 리스트로 리턴하고 싶으면 사실 mono안에 리스트로 넣어서 써도 아무 문제가 없음.
+
+```
+@GetMapping("/event2/{id}")
+Mono<List<Event>>event2(@PathVariable long id) {
+return Mono.just(List.of(new Event(1L, "event1"), new Event(2L, "event2")));
+}
+
+@GetMapping("/events")
+Flux<Event>events() {
+List<Event>events = List.of(new Event(1L, "event1"), new Event(2L, "event2"));
+    return Flux.fromIterable(events);
+    /*return Flux.just(new Event(1L, "event2"), new Event(2L, "event2"));*/
+}
+```
+
+하지만 리스트를 fromIterable와 같은 메서드를 사용해서 리턴하면 의미가 달라진다.
+
+Iterable의 서브 인터페이스인 List는 에서 Flux 데이터 스트림을 만들고 reactor operator(map…etc)들을 사용할 수 있다.
+
+하지만 Mono는 하나하나의 엔티티 레벨에서의 작업들을 수행하는 일(reactor lib을 사용x)들을 할 수 없는것이 1차적으로 차이점
+
+2번째로 http stream(요청을 보내면 응답이 하나로 오는것이 아니라 일부 청크단위로 나눠서 받을 수 있음)을 지원하려면 Flux를 이용하면 매우 편리함.
+
+![img.png](img.png)
+
+이벤트가 발생할때만 하나씩 들어오거나 하는데 결과를 보면 앞에 data: 결과를 보여줌.
+
+사실 코드에서는 한번에 데이터가 만들어져있는데 시간의 딜레이를 두고 데이터가 발생할 수 있기 때문에 데이터 단위로 쪼개져서 2개로 결과를 보내줌.
+
+데이터를 계속 시간을 두고 만드는 법으로 Stream.generate를 사용.
+
+```java
+// produces는 1차적으로는 client가 요청을 보내준거에서 accept 헤더를 보고 mapping을 해주기 위한 것
+// 2차적으로는 해당 컨트롤러가 어떤 미디어 타입으로 리턴해주는지도 사용할 수 있음.
+@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux<Event> events() throws ExecutionException, InterruptedException {
+Stream<Event> s = Stream.generate(() -> new Event(System.currentTimeMillis(), "value"));
+  return Flux.fromStream(s).delayElements(Duration.ofMillis(500)).take(10);
+}
+```
+
+스트림을 fromStream으로 바로 사용하면 무한으로 데이터를 만들어내기 때문에 take로 갯수의 제한을 줄 수 있다.(해당 갯수만큼 받고 cancel)
+
+delayElements는 데이터 리턴 확인할 때 딜레이를 줘서 확인하기 좋도록 하기 위함.
+
+약 5초동안 10개의 데이터를 처리하도록 되어있는데 쓰레드 하나가 5초동안 물고있는가??
+
+⇒ 딜레이를 걸면 백그라운드 스레드를 만들어서 처리를 함. (시작을 한 스레드가 아닌 처리를 위한 스레드를 만들고 거기서 5초동안 물고있음)
+
+외부 io처럼 io를 던져놓고 빠져나갔다가 들어오는 것이 아니라 딜레이는 블로킹이 들어가는데 메서드 전체가 블로킹이 되는 것은 아니고 해당 데이터를 처리하기 위한 스레드가 만들어지고 해당 스레드만 블로킹됨.
+
+```
+@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux<Event>events()throws ExecutionException, InterruptedException{
+return Flux
+        .<Event>generate(synchronousSink -> synchronousSink.next(new Event(System.currentTimeMillis(), "value")))
+.delayElements(Duration.ofMillis(500))
+.take(10);
+}
+```
+
+fromStream이 아닌 Flux에 있는 generate를 사용 가능하다.
+
+여러 generate가 있는데 그중 synchronousSink를 사용하는 메서드를 사용하면 데이터를 만들어줄수있다.(Sink > 하수구에 물을 계속 흘려보내는 것처럼 데이터를 만들어서 흘려주는 느낌)
+
+generate에 <Event>를 준 이유는 메서드에 어떤것을 리턴하는지 없기 때문에 컴파일에서 자바가 알수없음 그래서 타입 힌트를 준것.
+
+`generate의 두번째 메서드로 초기 상태값 (id)와 상태값과 sink를 이용해서 데이터를 리턴하고 해당 상태를 다음 sink를 보낼때 사용하는 방식`
+
+```
+@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux<Event>events()throws ExecutionException, InterruptedException{
+return Flux
+        .<Event, Long>generate(()-> 1L,
+															(id, sink)->{sink.next(new Event(id, "value" + id));
+									            return id + 1;
+															})
+				.delayElements(Duration.ofMillis(500))
+				.take(10);
+}
+```
+
+generate로 초기 상태와 그것을 이용해서 데이터를 계속 만들어내는 Flux와 interval을 이용해서 일정 간격으로 숫자를 만들어 내는 Flux를 zip을 사용해서 두개의 데이터를 묶어줌으로써 1초에 하나씩 보내주는 형태로 만듬
+
+```
+@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux<Event>events()throws ExecutionException, InterruptedException{
+// 초기 상태와 그것을 이용해서 데이터를 계속 만들어내는 Flux
+    Flux<Event>es = Flux
+        .<Event, Long>generate(()-> 1L,(id, sink)->{
+sink.next(new Event(id, "value" + id));
+            return id + 1;
+});
+
+    // 일정 간격으로 숫자를 만들어 내는 Flux
+    Flux<Long>interval = Flux.interval(Duration.ofSeconds(1));
+
+    return Flux.zip(es, interval).map(tu -> tu.getT1());
+}
+```
+
+interval의 데이터를 zip의 map할때 값을 사용해서 data의 초기값으로 사용
+
+```
+@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux<Event>events()throws ExecutionException, InterruptedException{
+// 초기 상태와 그것을 이용해서 데이터를 계속 만들어내는 Flux
+    Flux<String>es = Flux
+        .generate(sink -> sink.next("value"));
+
+    // 일정 간격으로 숫자를 만들어 내는 Flux
+    Flux<Long>interval = Flux.interval(Duration.ofSeconds(1));
+
+    return Flux.zip(es, interval).map(tu ->
+        new Event(tu.getT2(), tu.getT1()+ tu.getT2())
+    ).take(10);
+}
+```
 ---
 
 ![img_4.png](image/img_4.png)
